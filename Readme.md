@@ -1,3 +1,5 @@
+![Corona DVH Logo](corona.png)
+
 ### Corona DVH - Eclipse-Like Dose Volume Histogram Calculator
 
 ## Algorithm Sketch

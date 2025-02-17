@@ -89,7 +89,7 @@ namespace CoronaDVH.Helpers
         /// <param name="sliceZ">the current slice</param>
         /// <param name="ip">a set of parameters which defines the possible values in the grid</param>
         /// <param name="template">3x3 chamfer template to apply - use float.NaN to represent empty cells</param>
-        public static void Chamfer3x3<T>(OrientedVolumeGrid<T> initialGrid, int sliceZ, VolFillParams<T> ip, float[] template, bool reverseOrder = false)
+        public static void Chamfer3x3<T>(OrientedGrid3f initialGrid, int sliceZ, VolFillParams<T> ip, float[] template, bool reverseOrder = false)
         {
             var loopOp = new Action<int, int>((x, y) =>
             {
@@ -103,7 +103,7 @@ namespace CoronaDVH.Helpers
                         if (float.IsNaN(template[i])) { sums[i] = float.MaxValue; }
                         else { sums[i] = block[i] + template[i]; }
                     }
-                    initialGrid[x, y, sliceZ] = (T)(object)sums.Min();
+                    initialGrid[x, y, sliceZ] = sums.Min();
                 }
                 else if (block[4].Equals(ip.InitialOutsideValue))
                 {
@@ -113,7 +113,7 @@ namespace CoronaDVH.Helpers
                         if (float.IsNaN(template[i])) { differences[i] = float.MinValue; }
                         else { differences[i] = block[i] - template[i]; }
                     }
-                    initialGrid[x, y, sliceZ] = (T)(object)differences.Max();
+                    initialGrid[x, y, sliceZ] = differences.Max();
                 }
             });
 

@@ -49,13 +49,13 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
             { "pituitary", (0.7, 331.6, 991, 517.8) }
         };
 
-//Resample dose to CT grid
-var dvhDose = dose.ResampleOn(ct);
+
 foreach (var str in structures)
 {
     var sdf = new VarianStructureGrid(str, ct);
+    var sdfRsmpled = sdf.ResampleOn(dose);
     var groundTruthStr = groundTruth[str.Name];
-    var dvh = sdf.AggregateDvh(dvhDose);
+    var dvh = sdf.AggregateDvh(dose, ct, str);
     var max = dvh.MaxDose * 100;//cGy
     var min = dvh.MinDose*100; //cGy
     var mean = dvh.MeanDose * 100;//cGy

@@ -167,6 +167,58 @@ namespace CoronaDVH.GMath
                 yield return new Segment2d(vertices[vertices.Count - 1], vertices[0]);
         }
 
+        public bool IsClockwise()
+        {
+            return SignedArea < 0;
+        }
+
+        public Vector2d GetCentroid()
+        {
+            int count = vertices.Count;
+            if (count == 0)
+                return Vector2d.Zero;
+            if (count < 3)
+            {
+                // For fewer than 3 vertices, return the average point.
+                double sumX = 0, sumY = 0;
+                foreach (var v in vertices)
+                {
+                    sumX += v.X;
+                    sumY += v.Y;
+                }
+                return new Vector2d(sumX / count, sumY / count);
+            }
+
+            double signedArea = 0;
+            double cx = 0;
+            double cy = 0;
+            for (int i = 0; i < count; i++)
+            {
+                int j = (i + 1) % count;
+                double cross = vertices[i].X * vertices[j].Y - vertices[j].X * vertices[i].Y;
+                signedArea += cross;
+                cx += (vertices[i].X + vertices[j].X) * cross;
+                cy += (vertices[i].Y + vertices[j].Y) * cross;
+            }
+            signedArea *= 0.5;
+
+            // If the area is too close to zero, fallback to the average of points.
+            if (Math.Abs(signedArea) < 1e-10)
+            {
+                double sumX = 0, sumY = 0;
+                foreach (var v in vertices)
+                {
+                    sumX += v.X;
+                    sumY += v.Y;
+                }
+                return new Vector2d(sumX / count, sumY / count);
+            }
+
+            cx /= (6 * signedArea);
+            cy /= (6 * signedArea);
+            return new Vector2d(cx, cy);
+        }
+
         public double SignedArea
         {
             get

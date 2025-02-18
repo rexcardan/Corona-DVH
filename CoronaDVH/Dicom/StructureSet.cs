@@ -38,50 +38,51 @@ namespace CoronaDVH.Dicom
                     var hasContours = comatch.GetSequence(DicomTag.ContourSequence) != null;
                     if (!hasContours) { continue; }
 
-                    Dictionary<double, List<PolyLine2d>> allSliceContours = new Dictionary<double, List<PolyLine2d>>();
-                    //HAS CONTOURS - SET COLOR BYTES IN MATRIX
+                    Dictionary<double, List<RTStructureContour>> allSliceContours = new Dictionary<double, List<RTStructureContour>>();
                     foreach (var slice in comatch.GetSequence(DicomTag.ContourSequence).Items)
                     {
                         var contours = slice.GetValues<float>(DicomTag.ContourData);
                         if (contours.Length < 2 || contours.Length % 3 != 0)
                         {
-                            logger.LogError($"Slice for structure {meta.StructureId} has {contours.Length} contour points. Not divisible by 3! Can't process."); continue;
+                            logger.LogError($"Slice for structure {meta.StructureId} has {contours.Length} contour points. Not divisible by 3! Can't process.");
+                            continue;
                         }
                         try
                         {
-                            List<PolyLine2d> sliceContours = null;
-                            if (allSliceContours.ContainsKey(contours[2]))
+                            // Use the third coordinate (Z) from the first point as the key.
+                            double sliceZ = contours[2];
+
+                            if (!allSliceContours.ContainsKey(sliceZ))
                             {
-                                sliceContours = allSliceContours[contours[2]];
-                            }
-                            else
-                            {
-                                sliceContours = new List<PolyLine2d>();
-                                allSliceContours.Add(contours[2], sliceContours);
+                                allSliceContours[sliceZ] = new List<RTStructureContour>();
                             }
 
-                            var closedContour = new List<Vector2d>();
+                            List<Vector2d> closedContour = new List<Vector2d>();
                             for (int i = 0; i < contours.Length; i += 3)
                             {
-                                var contourPt = new Vector3f(contours[i + 0], contours[i + 1], contours[i + 2]);
-                                closedContour.Add(new Vector2d(contourPt.X, contourPt.Y));
+                                // Use X and Y; ignore Z since we’re working slice-by-slice.
+                                closedContour.Add(new Vector2d(contours[i], contours[i + 1]));
                             }
-                            sliceContours.Add(new PolyLine2d(closedContour));
-                            allSliceContours[contours[2]] = sliceContours;
+                            var poly = new PolyLine2d(closedContour);
+
+                            bool isHole = poly.IsClockwise();
+
+                            allSliceContours[sliceZ].Add(new RTStructureContour { Contour = poly, IsHole = isHole });
                         }
                         catch (Exception e)
                         {
                             logger.LogError(e.ToString());
                         }
                     }
+
                     meta.Contours = allSliceContours;
-                    metas[k] = meta;
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, $"Could not add structure {meta.StructureId}");
+                    logger.LogError(e.ToString());
                 }
             }
+
             return metas;
         }
     }

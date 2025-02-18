@@ -2,102 +2,128 @@
 using CoronaDVH.Geometry;
 using CoronaDVH.GMath;
 using CoronaDVH.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
+using Paths = System.Collections.Generic.List<System.Collections.Generic.List<CoronaDVH.GMath.Vector2l>>;
 
 namespace CoronaDVH.Helpers
 {
     public class DvhAggregator
     {
-        public DvhData Aggregate(OrientedGrid3f dvhDose, OrientedGrid3f ctGrid, RTStructure str)
+        public static DvhData ComputeDvh(OrientedGrid3f dvhDose, OrientedGrid3f ctGrid, RTStructure str,
+                                      float binWidth = 0.1f)
         {
-            var sdf = new VarianStructureGrid(str, ct);
-            var sdfRsmpled = sdf.ResampleOn(dose);
+            Dictionary<int, float> doseHistogram = new Dictionary<int, float>();
 
-            // Ensure dose grid and structure grid are in the same coordinate space.
-            if (dvhDose.Orientation.Origin != this.Orientation.Origin
-               || dvhDose.Orientation.Rotation != this.Orientation.Rotation
-               || dvhDose.CellSize != this.CellSize)
+            double totalVolume = 0f;
+            double doseVolumeSum = 0f;
+            double maxDose = float.MinValue;
+            double minDose = float.MaxValue;
+
+            // CT grid parameters.
+            float ctSliceThickness = ctGrid.CellSize.Z;
+            float ctOriginZ = ctGrid.Orientation.Origin.Z;
+
+            Vector3f dVoxelSize = dvhDose.CellSize;
+            double dVoxelVolume = dvhDose.CellVolume;
+
+            for (int dz = 0; dz < dvhDose.Dimensions.Z; dz++)
             {
-                throw new ArgumentException("Dose grid has to be in same coordinates as structure grid");
-            }
+                // Get the real-world lower corner of the dose slice.
+                Vector3f dSliceReal = dvhDose.GridToWorld(new Vector3i(0, 0, dz));
+                float voxelZMin = dSliceReal.Z;
+                // Correct: add the voxel's Z size instead of doubling dSliceReal.Z.
+                float voxelZMax = dSliceReal.Z + dVoxelSize.Z;
 
-            var indices = this.Indices().ToList();
-            var dvhData = new DvhData();
+                // Get contours from the structure that intersect the voxel's Z range.
+                var sliceContoursGrouped = str.GetContoursInRange(voxelZMin, voxelZMax);
+                if (sliceContoursGrouped.Count == 0)
+                    continue; // No contours in this range
 
-            // Compute the volume of a full voxel and the volume of each subdivided subvoxel.
-            var voxVolume = (float)CellVolume;
-            var subVoxVolume = (float)(voxVolume / Math.Pow(borderVoxelSplit, 3));
-
-            // Use Parallel.ForEach with thread-local storage to avoid contention when adding to dvhData.Points.
-            Parallel.ForEach(
-                indices,
-                () => new List<DvhPoint>(),  // Initialize a thread-local list.
-                (idx, loopState, localPoints) =>
+                // Process each dose voxel in the X-Y plane.
+                for (int dy = 0; dy < dvhDose.Dimensions.Y; dy++)
                 {
-                    var pt = this.GridToWorld(idx);
-                    var insideOutside = this[idx];
-
-                    if (insideOutside > 5) // Voxel is entirely inside.
+                    for (int dx = 0; dx < dvhDose.Dimensions.X; dx++)
                     {
-                        var dose = dvhDose.ValueAt(pt);
-                        localPoints.Add(new DvhPoint(dose, voxVolume));
-                    }
-                    else if (insideOutside >= -5 && insideOutside <= 5) // Voxel is on the boundary.
-                    {
-                        // Determine subvoxel dimensions.
-                        var subXSize = CellSize.X / borderVoxelSplit;
-                        var subYSize = CellSize.Y / borderVoxelSplit;
-                        var subZSize = CellSize.Z / borderVoxelSplit;
+                        double voxelIntersectionVolume = 0.0;
+                        Vector3f dosePtReal = dvhDose.GridToWorld(new Vector3i(dx, dy, dz));
+                        float voxelXMin = dosePtReal.X;
+                        float voxelXMax = dosePtReal.X + dVoxelSize.X;
+                        float voxelYMin = dosePtReal.Y;
+                        float voxelYMax = dosePtReal.Y + dVoxelSize.Y;
+                        double voxelVolume = dVoxelVolume;
 
-                        // For each subvoxel, compute its center.
-                        // We assume 'pt' is the center of the voxel, so the voxel spans from -CellSize/2 to +CellSize/2.
-                        for (int i = 0; i < borderVoxelSplit; i++)
+                        // Create the 2D rectangle (in CT grid space) for the voxel's projection.
+                        Vector3f voxelCorner1 = new Vector3f(voxelXMin, voxelYMin, voxelZMin);
+                        Vector3f voxelCorner2 = new Vector3f(voxelXMax, voxelYMax, voxelZMax);
+                        Vector3f ctCorner1 = ctGrid.WorldToGrid(voxelCorner1);
+                        Vector3f ctCorner2 = ctGrid.WorldToGrid(voxelCorner2);
+                        Vector2d rectMin = new Vector2d(Math.Min(ctCorner1.X, ctCorner2.X), Math.Min(ctCorner1.Y, ctCorner2.Y));
+                        Vector2d rectMax = new Vector2d(Math.Max(ctCorner1.X, ctCorner2.X), Math.Max(ctCorner1.Y, ctCorner2.Y));
+                        var voxelRect = PolyHelper.CreateRectangle(rectMin, rectMax);
+
+                        // Loop over each CT slice group (each group representing contours from one CT slice)
+                        foreach (var sliceGroup in sliceContoursGrouped)
                         {
-                            // Offset in the X direction.
-                            var offsetX = -CellSize.X / 2 + subXSize / 2 + i * subXSize;
-                            for (int j = 0; j < borderVoxelSplit; j++)
-                            {
-                                // Offset in the Y direction.
-                                var offsetY = -CellSize.Y / 2 + subYSize / 2 + j * subYSize;
-                                for (int k = 0; k < borderVoxelSplit; k++)
-                                {
-                                    // Offset in the Z direction.
-                                    var offsetZ = -CellSize.Z / 2 + subZSize / 2 + k * subZSize;
-                                    var subVoxelCenter = new Vector3f(pt.X + offsetX, pt.Y + offsetY, pt.Z + offsetZ);
+                            // Assume each group provides a slice's Z coordinate (e.g., sliceGroup.SliceZ)
+                            double sliceZ = sliceGroup.SliceZ;
+                            // Compute the CT slice's Z bounds.
+                            double sliceZMin = sliceZ - ctSliceThickness / 2f;
+                            double sliceZMax = sliceZ + ctSliceThickness / 2f;
+                            // Compute overlap between dose voxel Z range and this CT slice.
+                            double overlapZ = Math.Max(0, Math.Min(voxelZMax, sliceZMax) - Math.Max(voxelZMin, sliceZMin));
+                            if (overlapZ <= 0)
+                                continue;
 
-                                    var subDose = dvhDose.ValueAt(subVoxelCenter);
-                                    if (subDose > 0)
-                                    {
-                                        localPoints.Add(new DvhPoint(subDose, subVoxVolume));
-                                    }
-                                }
+                            // Process each contour in this CT slice.
+                            foreach (var contour in sliceGroup.Contours)
+                            {
+                                var intersectionPoly = PolyHelper.IntersectPolygons(voxelRect, contour);
+                                double intersectionArea = PolyHelper.ComputeArea(intersectionPoly);
+                                voxelIntersectionVolume += intersectionArea * overlapZ;
                             }
                         }
-                    }
-                    return localPoints;
-                },
-                localPoints =>
-                {
-                    // Merge thread-local lists into the global collection.
-                    lock (dvhData.Points)
-                    {
-                        dvhData.Points.AddRange(localPoints);
+
+                        // Compute the fraction of the voxel inside the structure.
+                        float fractionInside = (float)(voxelIntersectionVolume / voxelVolume);
+                        if (fractionInside <= 0)
+                            continue; // Skip voxel if no part is inside
+
+                        // Get dose value.
+                        float doseValue = dvhDose[dx, dy, dz];
+                        double voxelInsideVolume = dVoxelVolume * fractionInside;
+
+                        // Update summary statistics.
+                        totalVolume += voxelInsideVolume;
+                        doseVolumeSum += doseValue * voxelInsideVolume;
+                        maxDose = Math.Max(maxDose, doseValue);
+                        minDose = Math.Min(minDose, doseValue);
+
+                        // Bin the dose value.
+                        int binIndex = (int)(doseValue / binWidth);
+                        if (!doseHistogram.ContainsKey(binIndex))
+                            doseHistogram[binIndex] = 0;
+                        doseHistogram[binIndex] += (float)voxelInsideVolume;
                     }
                 }
-            );
+            }
 
-            // Calculate DVH summary statistics.
-            dvhData.MaxDose = dvhData.Points.Max(p => p.Dose);
-            dvhData.MeanDose = dvhData.Points.Sum(p => p.Dose * p.Volume) / dvhData.Points.Sum(p => p.Volume);
-            dvhData.Volume = dvhData.Points.Sum(p => p.Volume);
-            dvhData.MinDose = dvhData.Points.Min(p => p.Dose);
+            // Build DVH data.
+            DvhData dvhData = new DvhData
+            {
+                Volume = totalVolume,
+                MaxDose = maxDose,
+                MinDose = minDose,
+                MeanDose = (totalVolume > 0) ? (doseVolumeSum / totalVolume) : 0
+            };
+
+            foreach (var kvp in doseHistogram.OrderBy(kvp => kvp.Key))
+            {
+                float binDose = kvp.Key * binWidth;
+                float volume = kvp.Value;
+                dvhData.Points.Add(new DvhPoint(binDose, volume));
+            }
 
             return dvhData;
         }
+
     }
 }

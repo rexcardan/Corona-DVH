@@ -8,7 +8,7 @@
             Volume = volume;
         }
 
-        public float Dose { get; set; }
-        public float Volume { get; set; }
+        public double Dose { get; set; }
+        public double Volume { get; set; }
     }
 }

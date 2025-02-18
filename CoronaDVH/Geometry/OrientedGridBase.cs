@@ -38,6 +38,7 @@ namespace CoronaDVH.Geometry
         }
 
         public Vector3f CellSize { get; set; } = Vector3f.One;
+        public double CellVolume => CellSize.X * CellSize.Y * CellSize.Z;
         public Frame3f Orientation { get; set; } = Frame3f.Identity;
 
         /// <summary>

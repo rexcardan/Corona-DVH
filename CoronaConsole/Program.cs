@@ -1,6 +1,7 @@
 ﻿using CoronaConsole;
 using CoronaDVH.Dicom;
 using CoronaDVH.Geometry;
+using CoronaDVH.Helpers;
 
 LogHelper.ConfigureLogging();
 
@@ -52,14 +53,12 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
 
 foreach (var str in structures)
 {
-    var sdf = new VarianStructureGrid(str, ct);
-    var sdfRsmpled = sdf.ResampleOn(dose);
     var groundTruthStr = groundTruth[str.Name];
-    var dvh = sdf.AggregateDvh(dose, ct, str);
+    var dvh = DvhAggregator.ComputeDvh(dose, ct, str, 4);
     var max = dvh.MaxDose * 100;//cGy
-    var min = dvh.MinDose*100; //cGy
+    var min = dvh.MinDose * 100; //cGy
     var mean = dvh.MeanDose * 100;//cGy
-    var volume = dvh.Volume/1000; //mm3 => cm3 
+    var volume = dvh.Volume / 1000; //mm3 => cm3 
 
     Console.WriteLine($"Structure Comparison ({str.Name}):");
     PrintComparison("Volume", volume, groundTruthStr.Volume);

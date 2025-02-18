@@ -29,7 +29,7 @@ namespace CoronaDVH.Dicom
                 {
                     foreach (var poly in polyList)
                     {
-                        var bounds = poly.Bounds;
+                        var bounds = poly.Contour.Bounds;
                         strBounds.Min.X = (float)Math.Min(bounds.Min.X, strBounds.Min.X);
                         strBounds.Max.X = (float)Math.Max(bounds.Max.X, strBounds.Max.X);
                         strBounds.Min.Y = (float)Math.Min(bounds.Min.Y, strBounds.Min.Y);
@@ -52,7 +52,7 @@ namespace CoronaDVH.Dicom
                         foreach (var ctr in contourList.Value)
                         {
                             //Transform contour to image coordinates
-                            var contourPts = ctr
+                            var contourPts = ctr.Contour
                                 .Select(pt => imageGrid.WorldToGrid(new Vector3f(pt.X, pt.Y, contourList.Key)))
                                 .Select(pt => new Vector2d(pt.X, pt.Y))
                                 .ToList();
@@ -78,11 +78,5 @@ namespace CoronaDVH.Dicom
             }));
         }
         public AxisAlignedBox3f StructureBounds { get; set; }
-        public double CellVolume => CellSize.X * CellSize.Y * CellSize.Z;
-
-        public DvhData AggregateDvh(OrientedGrid3f dvhDose, int borderVoxelSplit = 2)
-        {
-           
-        }
     }
 }

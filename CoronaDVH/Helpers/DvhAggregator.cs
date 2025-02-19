@@ -8,8 +8,7 @@ namespace CoronaDVH.Helpers
 {
     public class DvhAggregator
     {
-        public static DvhData ComputeDvh(OrientedGrid3f dvhDose, OrientedGrid3f ctGrid, RTStructure str,
-                                      float binWidth = 0.1f)
+        public static DvhData ComputeDvh(OrientedGrid3f dvhDose, OrientedGrid3f ctGrid, RTStructure str, float binWidth = 0.1f)
         {
             Dictionary<int, float> doseHistogram = new Dictionary<int, float>();
 

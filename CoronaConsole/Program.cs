@@ -54,7 +54,7 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
 foreach (var str in structures)
 {
     var groundTruthStr = groundTruth[str.Name];
-    var dvh = DvhAggregator.ComputeDvh(dose, ct, str, 4);
+    var dvh = DvhAggregator.ComputeDvh(dose, ct, str);
     var max = dvh.MaxDose * 100;//cGy
     var min = dvh.MinDose * 100; //cGy
     var mean = dvh.MeanDose * 100;//cGy

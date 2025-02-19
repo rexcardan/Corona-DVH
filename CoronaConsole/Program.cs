@@ -1,6 +1,7 @@
 ﻿using CoronaConsole;
 using CoronaDVH.Dicom;
 using CoronaDVH.Geometry;
+using CoronaDVH.Helpers;
 
 LogHelper.ConfigureLogging();
 
@@ -49,25 +50,27 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
             { "pituitary", (0.7, 331.6, 991, 517.8) }
         };
 
-//Resample dose to CT grid
-var dvhDose = dose.ResampleOn(ct);
 foreach (var str in structures)
 {
-    var mask = StructureMask.FromContours(str, dose);
-    var sdf = new VarianStructureGrid(str, ct);
-    var groundTruthStr = groundTruth[str.Name];
-    var dvh = sdf.AggregateDvh(dvhDose);
-    var max = dvh.MaxDose * 100;//cGy
-    var min = dvh.MinDose*100; //cGy
-    var mean = dvh.MeanDose * 100;//cGy
-    var volume = dvh.Volume/1000; //mm3 => cm3 
+    if(groundTruth.ContainsKey(str.Name))
+    {
+        var groundTruthStr = groundTruth[str.Name];
+        var tmax = dose.Buffer.Max();
+        var mask = StructureMask.FromContours(str, dose);
+        tmax = dose.Buffer.Max();
 
-    Console.WriteLine($"Structure Comparison ({str.Name}):");
-    PrintComparison("Volume", volume, groundTruthStr.Volume);
-    PrintComparison("Min Dose", min, groundTruthStr.MinDose);
-    PrintComparison("Max Dose", max, groundTruthStr.MaxDose);
-    PrintComparison("Mean Dose", mean, groundTruthStr.MeanDose);
+        var dvh = DvhAggregator.Aggregate(dose, mask);
+        var max = dvh.MaxDose * 100;//cGy
+        var min = dvh.MinDose * 100; //cGy
+        var mean = dvh.MeanDose * 100;//cGy
+        var volume = dvh.Volume / 1000; //mm3 => cm3 
 
+        Console.WriteLine($"Structure Comparison ({str.Name}):");
+        PrintComparison("Volume", volume, groundTruthStr.Volume);
+        PrintComparison("Min Dose", min, groundTruthStr.MinDose);
+        PrintComparison("Max Dose", max, groundTruthStr.MaxDose);
+        PrintComparison("Mean Dose", mean, groundTruthStr.MeanDose);
+    }
 }
 
 static void PrintComparison(string parameter, double extracted, double groundTruth)

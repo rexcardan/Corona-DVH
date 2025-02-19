@@ -1,96 +1,95 @@
 ﻿using CoronaDVH.Geometry;
 using CoronaDVH.GMath;
+using CoronaDVH.Helpers;
+using System.Runtime.ConstrainedExecution;
 
 namespace CoronaDVH.Dicom
 {
-    public class StructureMask : OrientedGrid3f
+    public static class StructureMask
     {
         // Create a fractional mask by oversampling the dose grid.
-        public static StructureMask FromContours(RTStructure str, OrientedGrid3f dose, int oversampleFactor = 2)
+        public static OrientedGrid3f FromContours(RTStructure str, OrientedGrid3f dose, int oversampleFactor = 4)
         {
-            // Determine grid geometry from dose volume
+            // Determine grid geometry from the dose volume
             var baseSpacing = dose.CellSize;
             var highResSpacing = baseSpacing / oversampleFactor;
-            // Determine grid extents covering the structure (could use dose extents or structure bounds)
-            // For simplicity, use dose grid extents:
+            highResSpacing.Z = baseSpacing.Z; // Keep Z spacing unchanged
+
             var origin = dose.Orientation.Origin;
+            // Oversample only in X and Y:
             int nx = dose.Dimensions[0] * oversampleFactor;
             int ny = dose.Dimensions[1] * oversampleFactor;
-            int nz = dose.Dimensions[2] * oversampleFactor;
+            // Keep the Z resolution the same:
+            int nz = dose.Dimensions[2];
 
             var highResMask = new OrientedGrid3f(nx, ny, nz, 0);
+            highResMask.CellSize = highResSpacing;
+            highResMask.Orientation = dose.Orientation;
 
-            // Rasterize the contours into the high-resolution grid:
-            // For each slice of the high-res grid, determine which pixels lie inside the contour polygon of that slice.
-            // For each voxel center, use IsInsideSurface to check if it's inside the 3D closed surface.
+            // Use half the base slice thickness as the tolerance for matching contours
+            float sliceTolerance = baseSpacing.Z / 2f;
+
+            // Iterate over each Z slice of the high-res grid (Z is not oversampled)
             for (int iz = 0; iz < nz; ++iz)
             {
-                var doseZReal = dose.GridToWorld(new Vector3i(0, 0, iz)).Z;
-                var doseZRealNext = doseZReal + dose.CellSize.Z;
+                // Compute world Z for the center of the current slice
+                var sliceZCenter = highResMask.GridToWorld(new Vector3i(0, 0, iz)).Z;
 
-                var sliceContours = str.Contours.Where(k => k.Key >= doseZReal && k.Key < doseZRealNext);
-                if (!sliceContours.Any()) { continue; } //Skip slice
-
-                var best = sliceContours.OrderBy(k => Math.Abs(k.Key - doseZReal)).FirstOrDefault();
-                
-                for (int ix = 0; ix < nx; ++ix)
+                // Get contours whose Z coordinate is within the tolerance of this slice:
+                var sliceContours = str.Contours
+                    .Where(k => Math.Abs(k.Key - sliceZCenter) <= sliceTolerance);
+                if (!sliceContours.Any())
                 {
-                    for (int iy = 0; iy < ny; ++iy)
-                    {
+                    continue; // Skip if no contour is available for this slice
+                }
 
-                        // Compute world coordinates of voxel center:
-                        Vector3f worldPoint = origin
-                            + new Vector3f((ix + 0.5) * highResSpacing.X,
-                                          (iy + 0.5) * highResSpacing.Y,
-                                          (iz + 0.5) * highResSpacing.Z);
+                // Choose the contour set that is closest to the slice center:
+                var closest = sliceContours.OrderBy(k => Math.Abs(k.Key - sliceZCenter)).FirstOrDefault();
 
-                        if (IsInsideSurface(worldPoint))
-                        {
-                            highResMask[ix, iy, iz] = 1.0f;
-                        }
-                        else
-                        {
-                            highResMask[ix, iy, iz] = 0.0f;
-                        }
-                    }
+                foreach (var contour in closest.Value)
+                {
+                    // Transform contour points from world coordinates to high-res grid coordinates
+                    var contourPts = contour
+                        .Select(pt => highResMask.WorldToGrid(new Vector3f((float)pt.X, (float)pt.Y, sliceZCenter)))
+                        .Select(pt => new Vector2d(pt.X, pt.Y))
+                        .ToList();
+                    PolyFill.FillSlice(highResMask, new PolyLine2d(contourPts), iz, 1f);
                 }
             }
 
-            // Downsample highResMask to fractional mask at original dose resolution
-            float[,,] fracMask = new float[dose.Dimensions[0], dose.Dimensions[1], dose.Dimensions[2]];
+            // Downsample the high-res mask back to the original dose grid resolution.
+            // Since we've oversampled only in X and Y, average over oversampleFactor*oversampleFactor samples.
+            var fracMask = dose.EmptyClone();
             for (int i = 0; i < dose.Dimensions[0]; ++i)
             {
                 for (int j = 0; j < dose.Dimensions[1]; ++j)
                 {
                     for (int k = 0; k < dose.Dimensions[2]; ++k)
                     {
-                        // Average the oversampled voxels corresponding to this low-res voxel
                         int startX = i * oversampleFactor;
                         int startY = j * oversampleFactor;
-                        int startZ = k * oversampleFactor;
+                        int startZ = k; // Z is not oversampled
                         int countInside = 0;
-                        int total = oversampleFactor * oversampleFactor * oversampleFactor;
+                        int total = oversampleFactor * oversampleFactor; // Only oversampling in XY
+
                         for (int ii = 0; ii < oversampleFactor; ++ii)
                         {
                             for (int jj = 0; jj < oversampleFactor; ++jj)
                             {
-                                for (int kk = 0; kk < oversampleFactor; ++kk)
+                                if (highResMask[startX + ii, startY + jj, startZ] > 0.5f)
                                 {
-                                    if (highResMask[startX + ii, startY + jj, startZ + kk] > 0.5f)
-                                    {
-                                        countInside++;
-                                    }
+                                    countInside++;
                                 }
                             }
                         }
-                        fracMask[i, j, k] = (float)countInside / total; // fractional occupancy 0.0–1.0
+                        fracMask[i, j, k] = (float)countInside / total;
                     }
                 }
             }
-
-            // Return the structure mask aligned to dose grid
-            return new StructureMask { Fraction = fracMask, Origin = dose.Origin, Spacing = dose.Spacing, Dimensions = dose.Dimensions };
+            return fracMask;
         }
+
     }
+
 }
 

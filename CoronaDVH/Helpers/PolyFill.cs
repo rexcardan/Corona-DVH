@@ -5,77 +5,79 @@ namespace CoronaDVH.Helpers
 {
     public class PolyFill
     {
-        public static void FillSlice<T>(DenseGrid3T<T> grid, PolyLine2d poly, int sliceZ, T value)
+        /// <summary>
+        /// Fills a single slice (2D grid) of an OrientedGrid3f using a polygon defined by poly.
+        /// The polygon is assumed to be in grid coordinates.
+        /// </summary>
+        public static void FillSlice(OrientedGrid3f grid, PolyLine2d poly, int sliceZ, float value)
         {
-            var polySegments = poly.GetSegments().Where(s => s.Direction.Y != 0).ToList();
-            double minY = double.MaxValue;
-            double maxY = double.MinValue;
+            // Get all segments that are not horizontal (avoid division by zero)
+            var segments = poly.GetSegments()
+                               .Where(s => Math.Abs(s.Direction.Y) > 1e-8)
+                               .ToList();
 
-            foreach (var seg in polySegments)
-            {
-                maxY = Math.Max(maxY, Math.Max(seg.P0.Y, seg.P1.Y));
-                minY = Math.Min(minY, Math.Min(seg.P0.Y, seg.P1.Y));
-            }
+            // Determine vertical bounds (in grid coordinates) from the polygon points
+            double minY = poly.Min(pt => pt.Y);
+            double maxY = poly.Max(pt => pt.Y);
+
+            // Iterate over each row (y) of the grid covered by the polygon.
+            // Using y + 0.5 gives the center of the pixel row.
             for (int y = (int)Math.Floor(minY); y < (int)Math.Ceiling(maxY); ++y)
             {
-                var scanLine = new Segment2d(new Vector2d(0, y), new Vector2d(grid.Dimensions.X, y));
-                var intersections = polySegments.Select(s =>
-                {
-                    var segCheck = new IntrSegment2Segment2(s, scanLine);
-                    segCheck.Compute();
-                    return segCheck;
-                })
-                .Where(s => s.Result == IntersectionResult.Intersects)
-                .OrderBy(o => o.Point0.X).ToList();
+                double scanY = y + 0.5;
+                List<double> xIntersections = new List<double>();
 
-
-                if (!intersections.Any()) { continue; }
-                if (intersections.Count == 1)
+                // Process each segment
+                foreach (var seg in segments)
                 {
-                    //Grazing pass of a single segment .. color in?
+                    // Order the segment endpoints so that p0.Y <= p1.Y.
+                    Vector2d p0 = seg.P0, p1 = seg.P1;
+                    if (p0.Y > p1.Y)
+                    {
+                        p0 = seg.P1;
+                        p1 = seg.P0;
+                    }
+
+                    // Use a top-inclusive, bottom-exclusive test to avoid double counting:
+                    // include the intersection if scanY is >= p0.Y and < p1.Y.
+                    if (scanY >= p0.Y && scanY < p1.Y)
+                    {
+                        // Compute the intersection's x coordinate using linear interpolation.
+                        double t = (scanY - p0.Y) / (p1.Y - p0.Y);
+                        double intersectX = p0.X + t * (p1.X - p0.X);
+                        xIntersections.Add(intersectX);
+                    }
                 }
-                else
+
+                // Sort the intersections by x coordinate.
+                xIntersections.Sort();
+
+                // There should be an even number of intersections for a closed polygon.
+                if (xIntersections.Count % 2 != 0)
                 {
-                    List<double> pureIntersects = new List<double>();
-                    //Clean up intersections
-                    double lastX = intersections[0].Point0.X;
-                    double lastYDir = Math.Sign(intersections[0].Segment1.Direction.Y);
-                    pureIntersects.Add(lastX);
+                    // Optionally log or handle the anomaly. Here we skip this row.
+                    continue;
+                }
 
-                    for (int i = 1; i < intersections.Count; i++)
+                // Fill between pairs of intersections.
+                for (int i = 0; i < xIntersections.Count; i += 2)
+                {
+                    double startX = xIntersections[i];
+                    double endX = xIntersections[i + 1];
+
+                    // Determine pixel indices to fill.
+                    // Using ceiling for start and floor for end ensures we fill only fully covered pixels.
+                    int ixStart = (int)Math.Ceiling(startX);
+                    int ixEnd = (int)Math.Floor(endX);
+
+                    // If the intersection falls within a pixel, you may choose to fill that pixel.
+                    // Here, we fill all pixels between the computed indices.
+                    for (int x = ixStart; x <= ixEnd; x++)
                     {
-                        var currentX = intersections[i].Point0.X;
-                        var yDir = Math.Sign(intersections[i].Segment1.Direction.Y);
-                        if (currentX == lastX && yDir != lastYDir)
+                        // Ensure the index is within grid bounds.
+                        if (x >= 0 && x < grid.Dimensions.X && y >= 0 && y < grid.Dimensions.Y)
                         {
-                            pureIntersects.Add(currentX);
-                        }
-                        else if (currentX != lastX)
-                        {
-                            pureIntersects.Add(currentX);
-                        }
-
-                        lastX = currentX;
-                        lastYDir = yDir;
-                    }
-
-                    if (pureIntersects.Count == 1)
-                    {
-                        grid[(int)pureIntersects[0], y, sliceZ] = value;
-                    }
-                    else
-                    {
-                        var sections = pureIntersects.ChunkIn(2);
-                        foreach (var section in sections)
-                        {
-                            if (section.Count() == 2)
-                            {
-                                var start = section.ElementAt(0);
-                                var end = section.ElementAt(1);
-                                for (int x = (int)start; x < end; ++x)
-                                    grid[x, y, sliceZ] = value;
-                            }
-
+                            grid[x, y, sliceZ] = value;
                         }
                     }
                 }

@@ -53,6 +53,7 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
 var dvhDose = dose.ResampleOn(ct);
 foreach (var str in structures)
 {
+    var mask = StructureMask.FromContours(str, dose);
     var sdf = new VarianStructureGrid(str, ct);
     var groundTruthStr = groundTruth[str.Name];
     var dvh = sdf.AggregateDvh(dvhDose);

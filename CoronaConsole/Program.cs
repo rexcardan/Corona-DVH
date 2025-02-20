@@ -50,9 +50,10 @@ var groundTruth = new Dictionary<string, (double Volume, double MinDose, double 
             { "pituitary", (0.7, 331.6, 991, 517.8) }
         };
 
+Console.WriteLine("Str Name , Volume , Min Dose , Max Dose , Mean Dose");
 foreach (var str in structures)
 {
-    if(groundTruth.ContainsKey(str.Name))
+    if (groundTruth.ContainsKey(str.Name))
     {
         var groundTruthStr = groundTruth[str.Name];
         var tmax = dose.Buffer.Max();
@@ -65,16 +66,14 @@ foreach (var str in structures)
         var mean = dvh.MeanDose * 100;//cGy
         var volume = dvh.Volume / 1000; //mm3 => cm3 
 
-        Console.WriteLine($"Structure Comparison ({str.Name}):");
-        PrintComparison("Volume", volume, groundTruthStr.Volume);
-        PrintComparison("Min Dose", min, groundTruthStr.MinDose);
-        PrintComparison("Max Dose", max, groundTruthStr.MaxDose);
-        PrintComparison("Mean Dose", mean, groundTruthStr.MeanDose);
+        Console.Write(str.Name);
+        Console.Write(" , ");
+        Console.Write($"{volume:f2}/{groundTruthStr.Volume:f2}");
+        Console.Write(" , ");
+        Console.Write($"{min:f2}/{groundTruthStr.MinDose:f2}");
+        Console.Write(" , ");
+        Console.Write($"{max:f2}/{groundTruthStr.MaxDose:f2}");
+        Console.Write(" , ");
+        Console.WriteLine($"{mean:f2}/{groundTruthStr.MeanDose:f2}");
     }
-}
-
-static void PrintComparison(string parameter, double extracted, double groundTruth)
-{
-    double deltaPercent = Math.Abs(extracted - groundTruth) / groundTruth * 100.0;
-    Console.WriteLine($"{parameter} | Calculated: {extracted}, Ground Truth: {groundTruth}, Delta%: {deltaPercent:F2}%");
 }

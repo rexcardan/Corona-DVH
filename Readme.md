@@ -55,7 +55,7 @@ Read dose data into 3D grid
 3. Add Eclipse like functions GetDoseAtVolume, GetVolumeAtDose, MaxDose, MeanDose, MinDose
 
 ### References to Keep in Mind
-https://www.researchgate.net/figure/Agreement-acceptance-1-DD-1-DV-between-DVH-calculated-in-SlicerRT-and-DVH_tbl2_314221371
+https://www.researchgate.net/figure/Agreement-acceptance-1-DD-1-DV-between-DVH-calculated-in-SlicerRT-and-DVH_tbl2_314221371 <br>
 https://www.science.gov/topicpages/d/dose-volume+histogram+dvh.html#:~:text=dose,RESULTS%3A%20We%20found
 
 ![Corona Results](https://github.com/rexcardan/Corona-DVH/blob/main/CoronaConsole/corona_results_2_20_25.jpg)
